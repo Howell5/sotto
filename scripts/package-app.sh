@@ -10,6 +10,7 @@ ASSETS_DIR="$PROJECT_ROOT/Packaging/Assets"
 OUTPUT_DIR="$PROJECT_ROOT/outputs"
 APP_BUNDLE="$OUTPUT_DIR/Sotto.app"
 SIGN_IDENTITY="${SOTTO_CODESIGN_IDENTITY:--}"
+TIMESTAMP_MODE="${SOTTO_CODESIGN_TIMESTAMP:-auto}"
 
 for tool in swift plutil codesign; do
     if ! command -v "$tool" >/dev/null 2>&1; then
@@ -58,11 +59,25 @@ install -m 0644 \
     "$STAGED_APP/Contents/Resources/SottoMenuBarTemplate.png"
 
 printf 'Signing app bundle with identity %s…\n' "$SIGN_IDENTITY"
-if [[ "$SIGN_IDENTITY" == "-" ]]; then
-    TIMESTAMP_ARGUMENT=(--timestamp=none)
-else
-    TIMESTAMP_ARGUMENT=(--timestamp)
-fi
+case "$TIMESTAMP_MODE" in
+    auto)
+        if [[ "$SIGN_IDENTITY" == "-" ]]; then
+            TIMESTAMP_ARGUMENT=(--timestamp=none)
+        else
+            TIMESTAMP_ARGUMENT=(--timestamp)
+        fi
+        ;;
+    none)
+        TIMESTAMP_ARGUMENT=(--timestamp=none)
+        ;;
+    secure)
+        TIMESTAMP_ARGUMENT=(--timestamp)
+        ;;
+    *)
+        printf 'error: SOTTO_CODESIGN_TIMESTAMP must be auto, none, or secure\n' >&2
+        exit 1
+        ;;
+esac
 codesign \
     --force \
     --options runtime \

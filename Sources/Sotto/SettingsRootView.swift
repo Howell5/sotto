@@ -50,7 +50,6 @@ struct SettingsRootView: View {
         .frame(width: 760, height: 560)
         .task {
             permissions.refresh()
-            await model.refreshCredentialStatus()
         }
     }
 }

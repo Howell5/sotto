@@ -76,6 +76,8 @@ final class AppModel: ObservableObject {
     private var connectionTestSession: (any ASRSession)?
     private var connectionTestID: UUID?
     private var activeSessionHasRecognizedContent = false
+    private var cachedCredentials: [KeychainStore.Credential: String] = [:]
+    private var loadedCredentials = Set<KeychainStore.Credential>()
 
     init(
         settings: SettingsStore = SettingsStore(),
@@ -181,9 +183,12 @@ final class AppModel: ObservableObject {
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 try await keychain.remove(credential)
+                cachedCredentials.removeValue(forKey: credential)
             } else {
                 try await keychain.write(trimmed, for: credential)
+                cachedCredentials[credential] = trimmed
             }
+            loadedCredentials.insert(credential)
             await refreshCredentialStatus()
             credentialSaveError = nil
             invalidateConnectionTest()
@@ -198,8 +203,24 @@ final class AppModel: ObservableObject {
     }
 
     func refreshCredentialStatus() async {
-        funKeyConfigured = await keychain.read(.funASR)?.isEmpty == false
-        miMoKeyConfigured = await keychain.read(.miMo)?.isEmpty == false
+        funKeyConfigured = await credentialValue(for: .funASR) != nil
+        // The first release only exposes Bailian. Avoid touching a legacy MiMo
+        // Keychain item during every launch when it cannot be selected in UI.
+        miMoKeyConfigured = false
+    }
+
+    private func credentialValue(
+        for credential: KeychainStore.Credential
+    ) async -> String? {
+        if loadedCredentials.contains(credential) {
+            return cachedCredentials[credential]
+        }
+
+        let value = await keychain.read(credential)
+        loadedCredentials.insert(credential)
+        guard let value, !value.isEmpty else { return nil }
+        cachedCredentials[credential] = value
+        return value
     }
 
     func testSpeechConnection() {
@@ -266,8 +287,7 @@ final class AppModel: ObservableObject {
         region: FunRegion,
         workspaceID: String
     ) async {
-        guard let apiKey = await keychain.read(.funASR),
-              !apiKey.isEmpty,
+        guard let apiKey = await credentialValue(for: .funASR),
               !Task.isCancelled,
               connectionTestID == testID
         else {
@@ -567,8 +587,7 @@ final class AppModel: ObservableObject {
         stream: AsyncStream<Data>,
         sessionID: UUID
     ) async {
-        guard let apiKey = await keychain.read(request.credential),
-              !apiKey.isEmpty,
+        guard let apiKey = await credentialValue(for: request.credential),
               !Task.isCancelled,
               activeSessionID == sessionID
         else {
@@ -707,8 +726,7 @@ final class AppModel: ObservableObject {
                    : .singapore,
                workspaceInput: settings.funWorkspaceID
            ),
-           let apiKey = await keychain.read(.funASR),
-           !apiKey.isEmpty {
+           let apiKey = await credentialValue(for: .funASR) {
             do {
                 let polisher = TranscriptPolisher(route: route, apiKey: apiKey)
                 let candidate = try await polisher.polish(rawText)
