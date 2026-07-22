@@ -15,6 +15,20 @@ Sotto 是一个专注于 macOS 的原生语音输入 App：单击 `fn` 开始说
 
 翻译、聊天、云端历史和模板系统不在当前范围内。
 
+## 安装 GitHub 预览版
+
+当前发布包面向 Apple Silicon，支持 macOS 13 及以上版本。项目目前选择零成本分发，因此 GitHub 预览版使用 ad-hoc 签名，未经过 Apple Developer ID 签名和公证。
+
+1. 只从 [Sotto GitHub Release](https://github.com/Howell5/sotto/releases/tag/v0.2.0) 下载 DMG；同页的 `SHA256SUMS.txt` 可用于校验文件。
+2. 打开 DMG，把 Sotto 拖入 **Applications**。
+3. 首次打开如果被 macOS 阻止，先尝试右键 Sotto 并选择 **打开**。
+4. 如果仍被阻止，先触发一次打开，再进入“系统设置 → 隐私与安全性”，只对 Sotto 点击 **仍要打开**，验证本机密码后确认打开。
+5. 按下文开启麦克风和辅助功能权限，并配置自己的百炼 Workspace ID 与 API Key。
+
+不要全局关闭 Gatekeeper，也不要运行来源不明的“解除签名限制”命令。公司或学校管理的 Mac 可能禁止“仍要打开”，这种设备需要管理员允许。
+
+API Key 保存在 macOS Keychain。首次保存或首次运行一个新发布包时，系统可能询问 Sotto 是否可访问对应项目；仅当安装包来自上述官方仓库时选择 **始终允许**。由于公开预览包没有稳定的 Developer ID，升级后 macOS 仍有可能再次询问。
+
 ## 系统要求
 
 - macOS 13 Ventura 或更高版本
@@ -63,6 +77,40 @@ SOTTO_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 ```
 
 这只会签名，不会自动提交 notarization。
+
+### 本地开发：固定签名，避免反复弹 Keychain
+
+`package-app.sh` 默认使用 ad-hoc 签名，每次重新编译后代码哈希都会改变。Keychain 因此可能把新构建视为另一个 App，并重新询问是否允许读取 API Key。这是 macOS 的安全校验，不是 API 服务的问题。
+
+本机开发可以免费创建一个只供自己使用的稳定代码签名证书：
+
+1. 打开“钥匙串访问”；
+2. 选择“钥匙串访问 → 证书助理 → 创建证书”；
+3. 名称填写 `Sotto Local Development`；
+4. “身份类型”选择 **自签名根证书**，“证书类型”选择 **代码签名**；
+5. 勾选“让我覆盖默认设置”，其余项目保留默认值并完成创建。
+
+确认签名身份存在：
+
+```bash
+security find-identity -v -p codesigning
+```
+
+之后开发时使用：
+
+```bash
+./scripts/package-dev-app.sh
+open outputs/Sotto.app
+```
+
+脚本会固定使用 `Sotto Local Development`，并为本机自签名禁用无意义的在线时间戳请求。第一次让 `/usr/bin/codesign` 使用证书私钥时，Keychain 仍可能询问一次；确认是系统的 `codesign` 后选择 **始终允许**。从旧 ad-hoc 构建切换过来时，Sotto 读取现有 API Key 也可能再询问一次；固定签名后的后续重建不应继续反复弹窗。
+
+这个自签名证书只解决本机开发身份稳定性，不能替代 Apple 公证，也不要用它制作给朋友下载的发布包。若证书使用其他名称，可以这样指定：
+
+```bash
+SOTTO_DEVELOPMENT_CODESIGN_IDENTITY="Your Local Code Signing" \
+  ./scripts/package-dev-app.sh
+```
 
 ## 首次设置与权限
 
@@ -122,11 +170,11 @@ Fun-ASR 在录音时持续发送 PCM 音频并接收实时结果；Qwen3.5 Flash
 
 打开 `outputs/Sotto-0.2.0-macOS-arm64.dmg`，将 Sotto 拖入 **Applications**。之后可以从 Dock、Spotlight、Launchpad、Finder 或菜单栏打开；再次点击 Dock 图标会恢复设置窗口。
 
-当前机器没有 Developer ID Application 证书，因此产物默认使用 ad-hoc 签名，**尚未 notarize**。它适合本机安装和受控测试；分享给朋友时，Gatekeeper 仍会提示未验证的开发者。
+当前项目选择零成本预览分发，产物默认使用 ad-hoc 签名，**尚未 notarize**。它可以分享给朋友测试，但 Gatekeeper 会提示未验证的开发者；版本更新后，麦克风、辅助功能或 Keychain 授权也可能需要重新确认。
 
 本机直接构建通常可以正常打开。如果 app 经浏览器或聊天工具下载，Gatekeeper 可能阻止首次启动。请先尝试右键 app 选择 **打开**；如仍被阻止，到“系统设置 → 隐私与安全性”对这一个 app 选择 **仍要打开**。不要全局关闭 Gatekeeper。
 
-正式外部分发还需要 Apple Developer Program 账号，并完成：
+如果将来需要让普通用户双击即开、并让跨版本身份稳定，仍需 Apple Developer Program 账号，并完成：
 
 - Developer ID Application 签名
 - Hardened Runtime
@@ -151,4 +199,8 @@ Fun-ASR 在录音时持续发送 PCM 音频并接收实时结果；Qwen3.5 Flash
 
 **重建后权限失效**
 
-ad-hoc 签名随可执行文件变化，macOS 可能把重建产物视为新的授权对象。正式 Developer ID 签名后这一行为会稳定得多。
+ad-hoc 签名随可执行文件变化，macOS 可能把重建产物视为新的授权对象。本机开发请按“本地开发：固定签名”创建一次自签名证书，并改用 `./scripts/package-dev-app.sh`；公开预览版只有使用 Developer ID 才能从根本上稳定跨机器、跨版本身份。
+
+**为什么 Keychain 每次都询问是否允许读取 API Key**
+
+旧开发包的身份是随构建变化的 ad-hoc 代码哈希，而 Keychain 会按代码签名身份保护凭据。当前代码已把 API Key 收敛为启动时读取一次、进程内复用；再配合本机固定签名，正常情况下只会在首次建立信任或从旧签名迁移时确认一次。不要为了消除弹窗而允许所有 App 访问该项目。

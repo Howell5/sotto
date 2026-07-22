@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 actor KeychainStore {
-    enum Credential: String, Sendable {
+    enum Credential: String, Hashable, Sendable {
         case funASR = "fun-asr-api-key"
         case miMo = "mimo-api-key"
     }
