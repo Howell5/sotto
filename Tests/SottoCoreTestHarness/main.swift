@@ -779,6 +779,109 @@ private func testInsertionStrategyCopiesWhenFocusChanged() throws {
     )
 }
 
+private func testFocusedTextFallbackAcceptsOnlyFocusedTextControls() throws {
+    try expect(
+        FocusedTextCandidatePolicy.isEligible(
+            role: "AXTextArea",
+            isFocused: true
+        ),
+        equals: true,
+        "focused text area fallback"
+    )
+    try expect(
+        FocusedTextCandidatePolicy.isEligible(
+            role: "AXTextField",
+            isFocused: true
+        ),
+        equals: true,
+        "focused text field fallback"
+    )
+    try expect(
+        FocusedTextCandidatePolicy.isEligible(
+            role: "AXComboBox",
+            isFocused: true
+        ),
+        equals: true,
+        "focused combo box fallback"
+    )
+    try expect(
+        FocusedTextCandidatePolicy.isEligible(
+            role: "AXTextArea",
+            isFocused: false
+        ),
+        equals: false,
+        "unfocused text area fallback"
+    )
+    try expect(
+        FocusedTextCandidatePolicy.isEligible(
+            role: "AXButton",
+            isFocused: true
+        ),
+        equals: false,
+        "focused non-text control fallback"
+    )
+}
+
+private func testWindowFocusFallbackUsesFrontmostNormalWindow() throws {
+    let candidates = [
+        WindowFocusCandidate(
+            processID: 91,
+            layer: 25,
+            alpha: 1,
+            width: 320,
+            height: 48
+        ),
+        WindowFocusCandidate(
+            processID: 101,
+            layer: 0,
+            alpha: 1,
+            width: 1_710,
+            height: 1_073
+        ),
+        WindowFocusCandidate(
+            processID: 202,
+            layer: 0,
+            alpha: 1,
+            width: 1_710,
+            height: 1_073
+        )
+    ]
+
+    try expect(
+        WindowFocusCandidatePolicy.frontmostNormalProcessID(
+            candidates,
+            excluding: 999
+        ),
+        equals: 101,
+        "frontmost normal window process"
+    )
+    try expect(
+        WindowFocusCandidatePolicy.frontmostNormalProcessID(
+            candidates,
+            excluding: 101
+        ),
+        equals: nil,
+        "do not fall through behind Sotto's own normal window"
+    )
+}
+
+private func testCodexTargetDoesNotFollowAnotherProseMirror() throws {
+    try expect(
+        TextTargetIdentityPolicy.isSameTarget(
+            sameElement: true
+        ),
+        equals: true,
+        "same Codex AX element"
+    )
+    try expect(
+        TextTargetIdentityPolicy.isSameTarget(
+            sameElement: false
+        ),
+        equals: false,
+        "another ProseMirror in the same window"
+    )
+}
+
 private func testOverlayCopyUsesThinkingForProcessing() throws {
     try expect(
         DictationOverlayCopy.thinking,
@@ -1306,6 +1409,18 @@ private enum SottoCoreTestHarness {
             (
                 "Insertion strategy copies when focus changed",
                 testInsertionStrategyCopiesWhenFocusChanged
+            ),
+            (
+                "Focused text fallback accepts only focused text controls",
+                testFocusedTextFallbackAcceptsOnlyFocusedTextControls
+            ),
+            (
+                "Window focus fallback uses frontmost normal window",
+                testWindowFocusFallbackUsesFrontmostNormalWindow
+            ),
+            (
+                "Codex target does not follow another ProseMirror",
+                testCodexTargetDoesNotFollowAnotherProseMirror
             ),
             (
                 "Overlay copy uses Thinking for processing",

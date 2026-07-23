@@ -33,36 +33,29 @@ enum TextInsertionOutcome: Equatable {
 
 @MainActor
 final class TextInsertionService {
+    private struct ResolvedFocus {
+        let element: AXUIElement
+        let processID: pid_t
+    }
+
+    private let maximumFallbackNodeCount = 5_000
+
     func captureFocusedTarget() -> FocusedTextTarget? {
         guard AXIsProcessTrusted() else { return nil }
-        let systemWide = AXUIElementCreateSystemWide()
-        guard let element = focusedElement(from: systemWide) else {
+        guard let focus = resolveFocusedElement() else {
             return nil
         }
-
-        var processID: pid_t = 0
-        AXUIElementGetPid(element, &processID)
-        let bundleIdentifier = NSRunningApplication(
-            processIdentifier: processID
-        )?.bundleIdentifier
-        let domClasses = attribute("AXDOMClassList", from: element) as? [String]
-        let replacementSource: TextReplacementSource = bundleIdentifier == "com.openai.codex"
-            && domClasses?.contains("ProseMirror") == true
-            ? .codexProseMirror
-            : .standard
-        return FocusedTextTarget(
-            element: element,
-            processID: processID,
-            role: attribute("AXRole", from: element) as? String,
-            subrole: attribute("AXSubrole", from: element) as? String,
-            replacementSource: replacementSource
-        )
+        return makeTarget(from: focus)
     }
 
     func insert(_ text: String, into target: FocusedTextTarget?) async -> TextInsertionOutcome {
-        guard let target else {
+        guard let capturedTarget = target else {
             copyOnly(text)
             return .copied("未找到输入框，结果已复制")
+        }
+        guard let target = resolveCurrentTarget(matching: capturedTarget) else {
+            copyOnly(text)
+            return .copied("输入焦点已变化，结果已复制")
         }
 
         let capabilities = capabilities(for: target)
@@ -89,8 +82,6 @@ final class TextInsertionService {
     }
 
     private func capabilities(for target: FocusedTextTarget) -> InsertionTargetCapabilities {
-        let current = currentFocusedElement()
-        let sameElement = current.map { CFEqual($0, target.element) } ?? false
         let isSecure = target.subrole == "AXSecureTextField"
         let isNativeText = target.role == "AXTextField" || target.role == "AXTextArea"
 
@@ -103,7 +94,7 @@ final class TextInsertionService {
         let range = attribute("AXSelectedTextRange", from: target.element)
 
         return InsertionTargetCapabilities(
-            isSameFocusedElement: sameElement,
+            isSameFocusedElement: true,
             isSecure: isSecure,
             isNativeTextControl: isNativeText,
             valueIsWritable: valueStatus == .success && valueSettable.boolValue,
@@ -164,7 +155,7 @@ final class TextInsertionService {
         _ text: String,
         target: FocusedTextTarget
     ) async -> TextInsertionOutcome {
-        guard currentFocusedElement().map({ CFEqual($0, target.element) }) == true else {
+        guard let liveTarget = resolveCurrentTarget(matching: target) else {
             copyOnly(text)
             return .copied("输入焦点已变化，结果已复制")
         }
@@ -177,7 +168,7 @@ final class TextInsertionService {
 
         let pasteboard = NSPasteboard.general
         let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
-        let valueBefore = attribute("AXValue", from: target.element) as? String
+        let valueBefore = attribute("AXValue", from: liveTarget.element) as? String
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
         let insertedChangeCount = pasteboard.changeCount
@@ -187,7 +178,7 @@ final class TextInsertionService {
         }
 
         try? await Task.sleep(for: .milliseconds(420))
-        let valueAfter = attribute("AXValue", from: target.element) as? String
+        let valueAfter = attribute("AXValue", from: liveTarget.element) as? String
         if PasteDeliveryVerifier.didInsert(
             text: text,
             valueBefore: valueBefore,
@@ -206,9 +197,171 @@ final class TextInsertionService {
         return .copied("未能确认自动写入，结果已保留在剪贴板")
     }
 
-    private func currentFocusedElement() -> AXUIElement? {
+    private func resolveCurrentTarget(
+        matching capturedTarget: FocusedTextTarget
+    ) -> FocusedTextTarget? {
+        guard let focus = resolveFocusedElement(
+            expectedProcessID: capturedTarget.processID
+        ) else {
+            return nil
+        }
+        let currentTarget = makeTarget(from: focus)
+
+        guard TextTargetIdentityPolicy.isSameTarget(
+            sameElement: CFEqual(
+                capturedTarget.element,
+                currentTarget.element
+            )
+        ) else {
+            return nil
+        }
+        return currentTarget
+    }
+
+    private func resolveFocusedElement(
+        expectedProcessID: pid_t? = nil
+    ) -> ResolvedFocus? {
         let systemWide = AXUIElementCreateSystemWide()
-        return focusedElement(from: systemWide)
+        if let element = focusedElement(from: systemWide) {
+            return resolvedFocus(for: element)
+        }
+
+        guard let processID = frontmostNormalWindowProcessID(),
+              expectedProcessID.map({ $0 == processID }) ?? true
+        else {
+            return nil
+        }
+
+        let application = AXUIElementCreateApplication(processID)
+        let focusedWindow = elementAttribute(
+            "AXFocusedWindow",
+            from: application
+        )
+        if let element = focusedElement(from: application) {
+            return resolvedFocus(for: element)
+        }
+        guard let focusedWindow,
+              let element = focusedTextDescendant(from: focusedWindow)
+        else {
+            return nil
+        }
+        return resolvedFocus(for: element)
+    }
+
+    private func resolvedFocus(
+        for element: AXUIElement
+    ) -> ResolvedFocus {
+        var processID: pid_t = 0
+        AXUIElementGetPid(element, &processID)
+        return ResolvedFocus(
+            element: element,
+            processID: processID
+        )
+    }
+
+    private func makeTarget(from focus: ResolvedFocus) -> FocusedTextTarget {
+        let bundleIdentifier = NSRunningApplication(
+            processIdentifier: focus.processID
+        )?.bundleIdentifier
+        let domClasses = attribute(
+            "AXDOMClassList",
+            from: focus.element
+        ) as? [String]
+        let replacementSource: TextReplacementSource =
+            bundleIdentifier == "com.openai.codex"
+                && domClasses?.contains("ProseMirror") == true
+                ? .codexProseMirror
+                : .standard
+        return FocusedTextTarget(
+            element: focus.element,
+            processID: focus.processID,
+            role: attribute("AXRole", from: focus.element) as? String,
+            subrole: attribute("AXSubrole", from: focus.element) as? String,
+            replacementSource: replacementSource
+        )
+    }
+
+    private func focusedTextDescendant(
+        from root: AXUIElement
+    ) -> AXUIElement? {
+        var queue = [root]
+        var index = 0
+
+        while index < queue.count,
+              index < maximumFallbackNodeCount {
+            let element = queue[index]
+            index += 1
+            let role = attribute("AXRole", from: element) as? String
+            let isFocused = attribute("AXFocused", from: element) as? Bool
+                ?? false
+            if FocusedTextCandidatePolicy.isEligible(
+                role: role,
+                isFocused: isFocused
+            ) {
+                return element
+            }
+            guard queue.count < maximumFallbackNodeCount,
+                  let children = attribute(
+                      "AXChildren",
+                      from: element
+                  ) as? [AXUIElement]
+            else {
+                continue
+            }
+            queue.append(
+                contentsOf: children.prefix(
+                    maximumFallbackNodeCount - queue.count
+                )
+            )
+        }
+        return nil
+    }
+
+    private func frontmostNormalWindowProcessID() -> pid_t? {
+        guard let rawWindows = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return nil
+        }
+        let candidates = rawWindows.compactMap { window -> WindowFocusCandidate? in
+            guard let processID = window[
+                kCGWindowOwnerPID as String
+            ] as? pid_t,
+            let layer = window[kCGWindowLayer as String] as? Int,
+            let alpha = window[kCGWindowAlpha as String] as? Double,
+            let boundsDictionary = window[
+                kCGWindowBounds as String
+            ] as? [String: Any],
+            let bounds = CGRect(
+                dictionaryRepresentation: boundsDictionary as CFDictionary
+            ) else {
+                return nil
+            }
+            return WindowFocusCandidate(
+                processID: processID,
+                layer: layer,
+                alpha: alpha,
+                width: bounds.width,
+                height: bounds.height
+            )
+        }
+        return WindowFocusCandidatePolicy.frontmostNormalProcessID(
+            candidates,
+            excluding: ProcessInfo.processInfo.processIdentifier
+        )
+    }
+
+    private func elementAttribute(
+        _ name: String,
+        from element: AXUIElement
+    ) -> AXUIElement? {
+        guard let value = attribute(name, from: element),
+              CFGetTypeID(value) == AXUIElementGetTypeID()
+        else {
+            return nil
+        }
+        return (value as! AXUIElement)
     }
 
     private func focusedElement(from element: AXUIElement) -> AXUIElement? {
