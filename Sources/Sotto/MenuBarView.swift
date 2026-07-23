@@ -49,8 +49,8 @@ struct MenuBarView: View {
     private var statusLine: String {
         switch model.phase {
         case .idle: "Ready · \(settings.provider.title)"
-        case .listening: "Listening…"
-        case .processing, .inserting: "Writing…"
+        case .listening: DictationOverlayCopy.listening
+        case .processing, .inserting: DictationOverlayCopy.thinking
         case .success: "Inserted"
         case .cancelled: "Cancelled"
         case let .error(message, _): message
@@ -61,7 +61,7 @@ struct MenuBarView: View {
         switch model.phase {
         case .idle: "Start Listening"
         case .listening: "Finish Dictation"
-        case .processing, .inserting: "Writing…"
+        case .processing, .inserting: DictationOverlayCopy.thinking
         case .success: "Inserted"
         case .cancelled: "Cancelled"
         case .error: "Unavailable"

@@ -150,7 +150,7 @@ Fun-ASR 在录音时持续发送 PCM 音频并接收实时结果；Qwen3.5 Flash
 1. 把光标留在目标输入框中；
 2. 单击一次 `fn`，底部胶囊出现 **Listening…**；
 3. 自然说话；
-4. 再单击一次 `fn`，进入 **Writing…**；
+4. 再单击一次 `fn`，进入 **Thinking…**；
 5. 完成后文本写回原输入框，并短暂显示 **Inserted**。
 
 听写时按 `Esc` 会取消本次录音。Sotto 对 `fn` 有约 120ms 的防误触判断；`fn` 与 F 功能键、方向键或其他组合键一起使用时不会触发听写。也可以从菜单栏选择 **Start Listening / Stop Listening**。

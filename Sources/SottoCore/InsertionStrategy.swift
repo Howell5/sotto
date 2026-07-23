@@ -32,12 +32,18 @@ public enum InsertionStrategy: Equatable, Sendable {
 }
 
 public enum InsertionStrategyResolver {
-    public static func resolve(_ target: InsertionTargetCapabilities) -> InsertionStrategy {
+    public static func resolve(
+        _ target: InsertionTargetCapabilities,
+        source: TextReplacementSource = .standard
+    ) -> InsertionStrategy {
         guard target.isSameFocusedElement else {
             return .copyOnly(reason: .focusChanged)
         }
         guard !target.isSecure else {
             return .copyOnly(reason: .secureField)
+        }
+        if source == .codexProseMirror {
+            return .pasteboard
         }
         if target.isNativeTextControl,
            target.valueIsWritable,

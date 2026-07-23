@@ -487,7 +487,7 @@ final class AppModel: ObservableObject {
                 prepareCaptureAndConnect()
 
             case .stopRecordingAndTranscribe:
-                statusDetail = "Writing"
+                statusDetail = "Thinking"
                 stopCaptureAndFinishStream()
 
             case .cancelRecording:
