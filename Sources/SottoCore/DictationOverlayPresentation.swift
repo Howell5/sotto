@@ -1,6 +1,7 @@
 public enum DictationOverlayPresentation: Equatable, Sendable {
     case listening
     case thinking
+    case writing
     case cancelled
     case error
 
@@ -12,8 +13,10 @@ public enum DictationOverlayPresentation: Equatable, Sendable {
             nil
         case .listening:
             .listening
-        case .processing, .inserting:
+        case .processing, .polishing:
             .thinking
+        case .inserting:
+            .writing
         case .cancelled:
             .cancelled
         case .error:

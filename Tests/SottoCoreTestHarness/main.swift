@@ -93,16 +93,31 @@ private func testRepeatedExplicitFinishDoesNotStopTwice() throws {
     try expect(duplicateEffects, equals: [], "duplicate explicit finish effects")
 }
 
-private func testTranscriptMovesProcessingToInsertion() throws {
+private func testTranscriptMovesProcessingToPolishing() throws {
     var machine = DictationStateMachine(phase: .processing)
 
     let effects = machine.handle(.transcriptionSucceeded("明天下午三点开会"))
 
-    try expect(machine.phase, equals: .inserting, "phase after transcription")
+    try expect(machine.phase, equals: .polishing, "phase after transcription")
     try expect(
         effects,
-        equals: [.polishAndInsert("明天下午三点开会")],
+        equals: [.polishTranscript("明天下午三点开会")],
         "effects after transcription"
+    )
+}
+
+private func testPolishedTranscriptMovesToInsertion() throws {
+    var machine = DictationStateMachine(phase: .polishing)
+
+    let effects = machine.handle(
+        .transcriptPolished("明天下午三点开会")
+    )
+
+    try expect(machine.phase, equals: .inserting, "phase after cleanup")
+    try expect(
+        effects,
+        equals: [.insertText("明天下午三点开会")],
+        "effects after cleanup"
     )
 }
 
@@ -890,21 +905,95 @@ private func testOverlayCopyUsesThinkingForProcessing() throws {
     )
 }
 
-private func testProcessingAndInsertionShareOneThinkingPresentation() throws {
+private func testOverlayCopyUsesWritingForInsertion() throws {
+    try expect(
+        DictationOverlayCopy.writing,
+        equals: "Writing…",
+        "insertion overlay copy"
+    )
+}
+
+private func testProcessingPolishingAndInsertionHaveOrderedPresentations() throws {
     try expect(
         DictationOverlayPresentation.resolve(.processing),
         equals: .thinking,
         "processing presentation"
     )
     try expect(
-        DictationOverlayPresentation.resolve(.inserting),
+        DictationOverlayPresentation.resolve(.polishing),
         equals: .thinking,
+        "cleanup presentation"
+    )
+    try expect(
+        DictationOverlayPresentation.resolve(.inserting),
+        equals: .writing,
         "inserting presentation"
     )
     try expect(
         DictationOverlayPresentation.resolve(.success),
         equals: nil,
         "successful insertion has no confirmation presentation"
+    )
+}
+
+private func testOverlayReadinessWaitsForWritingPresentation() throws {
+    try expect(
+        OverlayPresentationReadinessPolicy.resolve(
+            expected: .writing,
+            visible: .writing,
+            ready: nil,
+            isPanelVisible: true,
+            hasTimedOut: false
+        ),
+        equals: .waiting,
+        "writing presentation still animating"
+    )
+    try expect(
+        OverlayPresentationReadinessPolicy.resolve(
+            expected: .writing,
+            visible: .writing,
+            ready: .writing,
+            isPanelVisible: true,
+            hasTimedOut: false
+        ),
+        equals: .ready,
+        "writing presentation ready"
+    )
+}
+
+private func testOverlayReadinessFailsClosed() throws {
+    try expect(
+        OverlayPresentationReadinessPolicy.resolve(
+            expected: .writing,
+            visible: .thinking,
+            ready: .thinking,
+            isPanelVisible: true,
+            hasTimedOut: false
+        ),
+        equals: .unavailable,
+        "different presentation"
+    )
+    try expect(
+        OverlayPresentationReadinessPolicy.resolve(
+            expected: .writing,
+            visible: .writing,
+            ready: nil,
+            isPanelVisible: false,
+            hasTimedOut: false
+        ),
+        equals: .unavailable,
+        "hidden panel"
+    )
+    try expect(
+        OverlayPresentationReadinessPolicy.resolve(
+            expected: .writing,
+            visible: .writing,
+            ready: nil,
+            isPanelVisible: true,
+            hasTimedOut: true
+        ),
+        equals: .unavailable,
+        "presentation timeout"
     )
 }
 
@@ -1223,8 +1312,12 @@ private enum SottoCoreTestHarness {
                 testRepeatedExplicitFinishDoesNotStopTwice
             ),
             (
-                "Transcript moves processing to insertion",
-                testTranscriptMovesProcessingToInsertion
+                "Transcript moves processing to polishing",
+                testTranscriptMovesProcessingToPolishing
+            ),
+            (
+                "Polished transcript moves to insertion",
+                testPolishedTranscriptMovesToInsertion
             ),
             (
                 "Insertion success returns directly to idle",
@@ -1427,8 +1520,20 @@ private enum SottoCoreTestHarness {
                 testOverlayCopyUsesThinkingForProcessing
             ),
             (
-                "Processing and insertion share one Thinking presentation",
-                testProcessingAndInsertionShareOneThinkingPresentation
+                "Overlay copy uses Writing for insertion",
+                testOverlayCopyUsesWritingForInsertion
+            ),
+            (
+                "Processing, polishing, and insertion have ordered presentations",
+                testProcessingPolishingAndInsertionHaveOrderedPresentations
+            ),
+            (
+                "Overlay readiness waits for Writing presentation",
+                testOverlayReadinessWaitsForWritingPresentation
+            ),
+            (
+                "Overlay readiness fails closed",
+                testOverlayReadinessFailsClosed
             ),
             (
                 "Bailian workspace input extracts ID from console API host",
