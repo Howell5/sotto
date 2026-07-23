@@ -56,8 +56,8 @@ public struct DictationStateMachine: Sendable {
             phase = .inserting
             return [.polishAndInsert(text)]
         case (.inserting, .insertionSucceeded):
-            phase = .success
-            return [.scheduleReset(afterMilliseconds: 800)]
+            phase = .idle
+            return []
         case let (_, .operationFailed(message, recoveryText)):
             phase = .error(message: message, recoveryText: recoveryText)
             if let recoveryText, !recoveryText.isEmpty {

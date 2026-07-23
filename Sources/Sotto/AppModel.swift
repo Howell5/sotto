@@ -752,7 +752,7 @@ final class AppModel: ObservableObject {
 
         switch outcome {
         case .inserted:
-            statusDetail = "Inserted"
+            statusDetail = "Ready"
             apply(.insertionSucceeded)
         case let .copied(message):
             statusDetail = message
