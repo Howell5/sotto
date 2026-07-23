@@ -2,6 +2,7 @@ public enum DictationPhase: Equatable, Sendable {
     case idle
     case listening
     case processing
+    case polishing
     case inserting
     case success
     case cancelled
@@ -15,6 +16,7 @@ public enum DictationEvent: Equatable, Sendable {
     case cancelRequested
     case noSpeechDetected
     case transcriptionSucceeded(String)
+    case transcriptPolished(String)
     case insertionSucceeded
     case operationFailed(message: String, recoveryText: String?)
     case resetRequested
@@ -25,7 +27,8 @@ public enum DictationEffect: Equatable, Sendable {
     case startRecording
     case stopRecordingAndTranscribe
     case cancelRecording
-    case polishAndInsert(String)
+    case polishTranscript(String)
+    case insertText(String)
     case copyToClipboard(String)
     case scheduleReset(afterMilliseconds: Int)
 }
@@ -53,8 +56,11 @@ public struct DictationStateMachine: Sendable {
             phase = .idle
             return []
         case let (.processing, .transcriptionSucceeded(text)):
+            phase = .polishing
+            return [.polishTranscript(text)]
+        case let (.polishing, .transcriptPolished(text)):
             phase = .inserting
-            return [.polishAndInsert(text)]
+            return [.insertText(text)]
         case (.inserting, .insertionSucceeded):
             phase = .idle
             return []

@@ -495,9 +495,14 @@ final class AppModel: ObservableObject {
                 focusedTarget = nil
                 statusDetail = "Cancelled"
 
-            case let .polishAndInsert(text):
+            case let .polishTranscript(text):
                 Task { [weak self] in
-                    await self?.polishAndInsert(text)
+                    await self?.polishTranscript(text)
+                }
+
+            case let .insertText(text):
+                Task { [weak self] in
+                    await self?.insertText(text)
                 }
 
             case let .copyToClipboard(text):
@@ -716,7 +721,7 @@ final class AppModel: ObservableObject {
         apply(.noSpeechDetected)
     }
 
-    private func polishAndInsert(_ rawText: String) async {
+    private func polishTranscript(_ rawText: String) async {
         var finalText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if settings.cleanupEnabled,
@@ -744,6 +749,31 @@ final class AppModel: ObservableObject {
                 statusDetail = "Cleanup unavailable; using transcript"
             }
         }
+
+        apply(.transcriptPolished(finalText))
+    }
+
+    private func insertText(_ finalText: String) async {
+        if let overlayController {
+            let isWritingPresented = await overlayController.waitUntilPresented(
+                .writing
+            )
+            guard phase == .inserting else { return }
+            guard isWritingPresented else {
+                let message = "无法确认写入状态，结果已复制"
+                lastResult = finalText
+                focusedTarget = nil
+                statusDetail = message
+                apply(
+                    .operationFailed(
+                        message: message,
+                        recoveryText: finalText
+                    )
+                )
+                return
+            }
+        }
+        guard phase == .inserting else { return }
 
         lastResult = finalText
         let target = focusedTarget

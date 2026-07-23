@@ -50,7 +50,8 @@ struct MenuBarView: View {
         switch model.phase {
         case .idle: "Ready · \(settings.provider.title)"
         case .listening: DictationOverlayCopy.listening
-        case .processing, .inserting: DictationOverlayCopy.thinking
+        case .processing, .polishing: DictationOverlayCopy.thinking
+        case .inserting: DictationOverlayCopy.writing
         case .success: "Ready"
         case .cancelled: "Cancelled"
         case let .error(message, _): message
@@ -61,7 +62,8 @@ struct MenuBarView: View {
         switch model.phase {
         case .idle: "Start Listening"
         case .listening: "Finish Dictation"
-        case .processing, .inserting: DictationOverlayCopy.thinking
+        case .processing, .polishing: DictationOverlayCopy.thinking
+        case .inserting: DictationOverlayCopy.writing
         case .success: "Start Listening"
         case .cancelled: "Cancelled"
         case .error: "Unavailable"
@@ -74,7 +76,7 @@ struct MenuBarView: View {
             !model.canStart
         case .listening:
             false
-        case .processing, .inserting, .success, .cancelled, .error:
+        case .processing, .polishing, .inserting, .success, .cancelled, .error:
             true
         }
     }

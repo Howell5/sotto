@@ -16,8 +16,11 @@ private final class FirstMouseHostingView<Content: View>: NSHostingView<Content>
 @MainActor
 final class OverlayPanelController: AnyObject {
     private let panel: NonActivatingPanel
+    private let hostingView: FirstMouseHostingView<OverlayView>
     private let model: AppModel
     private var visiblePresentation: DictationOverlayPresentation?
+    private var readyPresentation: DictationOverlayPresentation?
+    private var presentationGeneration = 0
 
     init(model: AppModel) {
         self.model = model
@@ -26,6 +29,12 @@ final class OverlayPanelController: AnyObject {
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
+        )
+        hostingView = FirstMouseHostingView(
+            rootView: OverlayView(
+                model: model,
+                phase: .idle
+            )
         )
         panel.level = .statusBar
         panel.collectionBehavior = [
@@ -39,36 +48,88 @@ final class OverlayPanelController: AnyObject {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.ignoresMouseEvents = true
-        panel.contentView = FirstMouseHostingView(
-            rootView: OverlayView()
-                .environmentObject(model)
-        )
+        panel.contentView = hostingView
     }
 
     func render(phase: DictationPhase) {
         guard let presentation = DictationOverlayPresentation.resolve(phase) else {
+            presentationGeneration += 1
             visiblePresentation = nil
+            readyPresentation = nil
             panel.orderOut(nil)
             return
         }
 
         panel.ignoresMouseEvents = presentation != .listening
-        guard presentation != visiblePresentation || !panel.isVisible else {
+        let needsPresentationTransition =
+            presentation != visiblePresentation || !panel.isVisible
+        if needsPresentationTransition {
+            panel.alphaValue = 0
+        }
+        hostingView.rootView = OverlayView(
+            model: model,
+            phase: phase
+        )
+        hostingView.layoutSubtreeIfNeeded()
+        hostingView.displayIfNeeded()
+        guard needsPresentationTransition else {
             return
         }
 
+        presentationGeneration += 1
+        let generation = presentationGeneration
+        readyPresentation = nil
         visiblePresentation = presentation
         let size = panelSize(for: presentation)
         panel.setContentSize(size)
         position(size: size)
-        panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
                 ? 0.12
                 : 0.18
             panel.animator().alphaValue = 1
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.presentationGeneration == generation
+                else { return }
+                self.readyPresentation =
+                    self.visiblePresentation == presentation
+                        && self.panel.isVisible
+                        ? presentation
+                        : nil
+            }
         }
+    }
+
+    func waitUntilPresented(
+        _ presentation: DictationOverlayPresentation
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .milliseconds(750))
+
+        while !Task.isCancelled {
+            switch OverlayPresentationReadinessPolicy.resolve(
+                expected: presentation,
+                visible: visiblePresentation,
+                ready: readyPresentation,
+                isPanelVisible: panel.isVisible,
+                hasTimedOut: clock.now >= deadline
+            ) {
+            case .ready:
+                return true
+            case .unavailable:
+                return false
+            case .waiting:
+                do {
+                    try await Task.sleep(for: .milliseconds(10))
+                } catch {
+                    return false
+                }
+            }
+        }
+        return false
     }
 
     private func panelSize(
@@ -77,6 +138,7 @@ final class OverlayPanelController: AnyObject {
         switch presentation {
         case .listening: NSSize(width: 280, height: 52)
         case .thinking: NSSize(width: 164, height: 44)
+        case .writing: NSSize(width: 154, height: 44)
         case .cancelled: NSSize(width: 124, height: 40)
         case .error: NSSize(width: 300, height: 48)
         }
@@ -84,8 +146,9 @@ final class OverlayPanelController: AnyObject {
 
     private func position(size: NSSize) {
         let mouseLocation = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) }
-            ?? NSScreen.main
+        let screen = NSScreen.screens.first {
+            NSMouseInRect(mouseLocation, $0.frame, false)
+        } ?? NSScreen.main
         guard let visibleFrame = screen?.visibleFrame else { return }
 
         panel.setFrameOrigin(
@@ -98,7 +161,8 @@ final class OverlayPanelController: AnyObject {
 }
 
 private struct OverlayView: View {
-    @EnvironmentObject private var model: AppModel
+    @ObservedObject var model: AppModel
+    let phase: DictationPhase
 
     var body: some View {
         HStack(spacing: 10) {
@@ -113,15 +177,11 @@ private struct OverlayView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         .foregroundStyle(Color(hex: 0xF4F3EF))
-        .animation(
-            .spring(response: 0.28, dampingFraction: 0.86),
-            value: model.phase
-        )
     }
 
     @ViewBuilder
     private var content: some View {
-        switch model.phase {
+        switch phase {
         case .idle:
             EmptyView()
         case .listening:
@@ -160,11 +220,17 @@ private struct OverlayView: View {
             .contentShape(Circle())
             .accessibilityLabel("完成并转写")
             .help("完成并写入原输入框")
-        case .processing, .inserting:
+        case .processing, .polishing:
             ProgressView()
                 .controlSize(.small)
                 .tint(Color(hex: 0xD8B46B))
             Text(DictationOverlayCopy.thinking)
+                .font(.system(size: 13, weight: .semibold))
+        case .inserting:
+            ProgressView()
+                .controlSize(.small)
+                .tint(Color(hex: 0x9EC39A))
+            Text(DictationOverlayCopy.writing)
                 .font(.system(size: 13, weight: .semibold))
         case .success:
             EmptyView()
