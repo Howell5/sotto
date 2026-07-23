@@ -106,15 +106,15 @@ private func testTranscriptMovesProcessingToInsertion() throws {
     )
 }
 
-private func testInsertionSuccessShowsConfirmationThenResets() throws {
+private func testInsertionSuccessReturnsDirectlyToIdle() throws {
     var machine = DictationStateMachine(phase: .inserting)
 
     let effects = machine.handle(.insertionSucceeded)
 
-    try expect(machine.phase, equals: .success, "phase after insertion")
+    try expect(machine.phase, equals: .idle, "phase after insertion")
     try expect(
         effects,
-        equals: [.scheduleReset(afterMilliseconds: 800)],
+        equals: [],
         "effects after insertion"
     )
 }
@@ -333,7 +333,7 @@ private func testFnPressIsIgnoredDuringProcessing() throws {
 }
 
 private func testResetReturnsTransientPhaseToIdle() throws {
-    var machine = DictationStateMachine(phase: .success)
+    var machine = DictationStateMachine(phase: .cancelled)
 
     let effects = machine.handle(.resetRequested)
 
@@ -787,6 +787,24 @@ private func testOverlayCopyUsesThinkingForProcessing() throws {
     )
 }
 
+private func testProcessingAndInsertionShareOneThinkingPresentation() throws {
+    try expect(
+        DictationOverlayPresentation.resolve(.processing),
+        equals: .thinking,
+        "processing presentation"
+    )
+    try expect(
+        DictationOverlayPresentation.resolve(.inserting),
+        equals: .thinking,
+        "inserting presentation"
+    )
+    try expect(
+        DictationOverlayPresentation.resolve(.success),
+        equals: nil,
+        "successful insertion has no confirmation presentation"
+    )
+}
+
 private func testBailianWorkspaceInputExtractsIDFromConsoleAPIHost() throws {
     let workspaceID = BailianWorkspaceInput.normalizedID(
         from: "https://llm-exampleworkspace123.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
@@ -1106,8 +1124,8 @@ private enum SottoCoreTestHarness {
                 testTranscriptMovesProcessingToInsertion
             ),
             (
-                "Insertion success shows confirmation then resets",
-                testInsertionSuccessShowsConfirmationThenResets
+                "Insertion success returns directly to idle",
+                testInsertionSuccessReturnsDirectlyToIdle
             ),
             (
                 "Insertion failure copies recoverable text",
@@ -1292,6 +1310,10 @@ private enum SottoCoreTestHarness {
             (
                 "Overlay copy uses Thinking for processing",
                 testOverlayCopyUsesThinkingForProcessing
+            ),
+            (
+                "Processing and insertion share one Thinking presentation",
+                testProcessingAndInsertionShareOneThinkingPresentation
             ),
             (
                 "Bailian workspace input extracts ID from console API host",

@@ -17,6 +17,7 @@ private final class FirstMouseHostingView<Content: View>: NSHostingView<Content>
 final class OverlayPanelController: AnyObject {
     private let panel: NonActivatingPanel
     private let model: AppModel
+    private var visiblePresentation: DictationOverlayPresentation?
 
     init(model: AppModel) {
         self.model = model
@@ -45,13 +46,19 @@ final class OverlayPanelController: AnyObject {
     }
 
     func render(phase: DictationPhase) {
-        panel.ignoresMouseEvents = phase != .listening
-        guard phase != .idle else {
+        guard let presentation = DictationOverlayPresentation.resolve(phase) else {
+            visiblePresentation = nil
             panel.orderOut(nil)
             return
         }
 
-        let size = panelSize(for: phase)
+        panel.ignoresMouseEvents = presentation != .listening
+        guard presentation != visiblePresentation || !panel.isVisible else {
+            return
+        }
+
+        visiblePresentation = presentation
+        let size = panelSize(for: presentation)
         panel.setContentSize(size)
         position(size: size)
         panel.alphaValue = 0
@@ -64,13 +71,14 @@ final class OverlayPanelController: AnyObject {
         }
     }
 
-    private func panelSize(for phase: DictationPhase) -> NSSize {
-        switch phase {
+    private func panelSize(
+        for presentation: DictationOverlayPresentation
+    ) -> NSSize {
+        switch presentation {
         case .listening: NSSize(width: 280, height: 52)
-        case .processing, .inserting: NSSize(width: 164, height: 44)
-        case .success, .cancelled: NSSize(width: 124, height: 40)
+        case .thinking: NSSize(width: 164, height: 44)
+        case .cancelled: NSSize(width: 124, height: 40)
         case .error: NSSize(width: 300, height: 48)
-        case .idle: NSSize(width: 1, height: 1)
         }
     }
 
@@ -159,10 +167,7 @@ private struct OverlayView: View {
             Text(DictationOverlayCopy.thinking)
                 .font(.system(size: 13, weight: .semibold))
         case .success:
-            Image(systemName: "checkmark")
-                .foregroundStyle(Color(hex: 0x9EC39A))
-            Text(DictationOverlayCopy.inserted)
-                .font(.system(size: 13, weight: .semibold))
+            EmptyView()
         case .cancelled:
             Text(DictationOverlayCopy.cancelled)
                 .font(.system(size: 13, weight: .semibold))
