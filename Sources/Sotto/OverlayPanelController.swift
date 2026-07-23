@@ -120,7 +120,7 @@ private struct OverlayView: View {
             Circle()
                 .fill(Color(hex: 0x9EC39A))
                 .frame(width: 8, height: 8)
-            Text("Listening…")
+            Text(DictationOverlayCopy.listening)
                 .font(.system(size: 13, weight: .semibold))
             Spacer(minLength: 2)
             LevelMeter(level: model.audioLevel)
@@ -156,15 +156,15 @@ private struct OverlayView: View {
             ProgressView()
                 .controlSize(.small)
                 .tint(Color(hex: 0xD8B46B))
-            Text("Writing…")
+            Text(DictationOverlayCopy.thinking)
                 .font(.system(size: 13, weight: .semibold))
         case .success:
             Image(systemName: "checkmark")
                 .foregroundStyle(Color(hex: 0x9EC39A))
-            Text("Inserted")
+            Text(DictationOverlayCopy.inserted)
                 .font(.system(size: 13, weight: .semibold))
         case .cancelled:
-            Text("Cancelled")
+            Text(DictationOverlayCopy.cancelled)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color(hex: 0xB6B7B1))
         case let .error(message, _):

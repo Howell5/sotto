@@ -744,6 +744,25 @@ private func testInsertionStrategyUsesPasteForRichText() throws {
     )
 }
 
+private func testInsertionStrategyUsesPasteForCodexProseMirror() throws {
+    let target = InsertionTargetCapabilities(
+        isSameFocusedElement: true,
+        isSecure: false,
+        isNativeTextControl: true,
+        valueIsWritable: true,
+        hasSelectedTextRange: true
+    )
+
+    try expect(
+        InsertionStrategyResolver.resolve(
+            target,
+            source: .codexProseMirror
+        ),
+        equals: .pasteboard,
+        "Codex ProseMirror strategy"
+    )
+}
+
 private func testInsertionStrategyCopiesWhenFocusChanged() throws {
     let target = InsertionTargetCapabilities(
         isSameFocusedElement: false,
@@ -757,6 +776,14 @@ private func testInsertionStrategyCopiesWhenFocusChanged() throws {
         InsertionStrategyResolver.resolve(target),
         equals: .copyOnly(reason: .focusChanged),
         "changed focus strategy"
+    )
+}
+
+private func testOverlayCopyUsesThinkingForProcessing() throws {
+    try expect(
+        DictationOverlayCopy.thinking,
+        equals: "Thinking…",
+        "processing overlay copy"
     )
 }
 
@@ -1255,8 +1282,16 @@ private enum SottoCoreTestHarness {
                 testInsertionStrategyUsesPasteForRichText
             ),
             (
+                "Insertion strategy uses paste for Codex ProseMirror",
+                testInsertionStrategyUsesPasteForCodexProseMirror
+            ),
+            (
                 "Insertion strategy copies when focus changed",
                 testInsertionStrategyCopiesWhenFocusChanged
+            ),
+            (
+                "Overlay copy uses Thinking for processing",
+                testOverlayCopyUsesThinkingForProcessing
             ),
             (
                 "Bailian workspace input extracts ID from console API host",

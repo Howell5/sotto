@@ -66,7 +66,10 @@ final class TextInsertionService {
         }
 
         let capabilities = capabilities(for: target)
-        switch InsertionStrategyResolver.resolve(capabilities) {
+        switch InsertionStrategyResolver.resolve(
+            capabilities,
+            source: target.replacementSource
+        ) {
         case .directValueReplacement:
             if replaceSelectedRange(text, in: target) {
                 return .inserted
