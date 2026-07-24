@@ -51,7 +51,7 @@ struct MenuBarView: View {
         case .idle: "Ready · \(settings.provider.title)"
         case .listening: DictationOverlayCopy.listening
         case .processing, .polishing: DictationOverlayCopy.thinking
-        case .inserting: DictationOverlayCopy.writing
+        case .inserting: "Ready"
         case .success: "Ready"
         case .cancelled: "Cancelled"
         case let .error(message, _): message
@@ -63,7 +63,7 @@ struct MenuBarView: View {
         case .idle: "Start Listening"
         case .listening: "Finish Dictation"
         case .processing, .polishing: DictationOverlayCopy.thinking
-        case .inserting: DictationOverlayCopy.writing
+        case .inserting: "Start Listening"
         case .success: "Start Listening"
         case .cancelled: "Cancelled"
         case .error: "Unavailable"

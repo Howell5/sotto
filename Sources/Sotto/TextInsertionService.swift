@@ -51,11 +51,15 @@ final class TextInsertionService {
     func insert(_ text: String, into target: FocusedTextTarget?) async -> TextInsertionOutcome {
         guard let capturedTarget = target else {
             copyOnly(text)
-            return .copied("未找到输入框，结果已复制")
+            return .copied(
+                ClipboardRecoveryCopy.message(reason: "未识别到输入框")
+            )
         }
         guard let target = resolveCurrentTarget(matching: capturedTarget) else {
             copyOnly(text)
-            return .copied("输入焦点已变化，结果已复制")
+            return .copied(
+                ClipboardRecoveryCopy.message(reason: "输入焦点已变化")
+            )
         }
 
         let capabilities = capabilities(for: target)
@@ -74,9 +78,15 @@ final class TextInsertionService {
             copyOnly(text)
             switch reason {
             case .secureField:
-                return .copied("安全输入框不会自动写入，结果已复制")
+                return .copied(
+                    ClipboardRecoveryCopy.message(
+                        reason: "安全输入框不会自动写入"
+                    )
+                )
             case .focusChanged:
-                return .copied("输入焦点已变化，结果已复制")
+                return .copied(
+                    ClipboardRecoveryCopy.message(reason: "输入焦点已变化")
+                )
             }
         }
     }
@@ -157,13 +167,17 @@ final class TextInsertionService {
     ) async -> TextInsertionOutcome {
         guard let liveTarget = resolveCurrentTarget(matching: target) else {
             copyOnly(text)
-            return .copied("输入焦点已变化，结果已复制")
+            return .copied(
+                ClipboardRecoveryCopy.message(reason: "输入焦点已变化")
+            )
         }
 
         guard CGPreflightPostEventAccess() else {
             _ = CGRequestPostEventAccess()
             copyOnly(text)
-            return .copied("需要自动粘贴权限，结果已复制")
+            return .copied(
+                ClipboardRecoveryCopy.message(reason: "需要自动粘贴权限")
+            )
         }
 
         let pasteboard = NSPasteboard.general
@@ -174,7 +188,9 @@ final class TextInsertionService {
         let insertedChangeCount = pasteboard.changeCount
 
         guard postCommandV() else {
-            return .copied("无法发送粘贴按键，结果已复制")
+            return .copied(
+                ClipboardRecoveryCopy.message(reason: "无法发送粘贴按键")
+            )
         }
 
         try? await Task.sleep(for: .milliseconds(420))
@@ -194,7 +210,7 @@ final class TextInsertionService {
             pasteboard.clearContents()
             pasteboard.setString(text, forType: .string)
         }
-        return .copied("未能确认自动写入，结果已保留在剪贴板")
+        return .copied(ClipboardRecoveryCopy.uncertainDeliveryMessage)
     }
 
     private func resolveCurrentTarget(

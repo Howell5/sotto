@@ -905,15 +905,15 @@ private func testOverlayCopyUsesThinkingForProcessing() throws {
     )
 }
 
-private func testOverlayCopyUsesWritingForInsertion() throws {
+private func testInsertionHasNoOverlayPresentation() throws {
     try expect(
-        DictationOverlayCopy.writing,
-        equals: "Writing…",
-        "insertion overlay copy"
+        DictationOverlayPresentation.resolve(.inserting),
+        equals: nil,
+        "insertion presentation"
     )
 }
 
-private func testProcessingPolishingAndInsertionHaveOrderedPresentations() throws {
+private func testProcessingAndPolishingUseThinkingBeforeDismissal() throws {
     try expect(
         DictationOverlayPresentation.resolve(.processing),
         equals: .thinking,
@@ -926,8 +926,8 @@ private func testProcessingPolishingAndInsertionHaveOrderedPresentations() throw
     )
     try expect(
         DictationOverlayPresentation.resolve(.inserting),
-        equals: .writing,
-        "inserting presentation"
+        equals: nil,
+        "inserting has no presentation"
     )
     try expect(
         DictationOverlayPresentation.resolve(.success),
@@ -936,64 +936,73 @@ private func testProcessingPolishingAndInsertionHaveOrderedPresentations() throw
     )
 }
 
-private func testOverlayReadinessWaitsForWritingPresentation() throws {
+private func testOverlayDismissalWaitsUntilPanelIsHidden() throws {
     try expect(
-        OverlayPresentationReadinessPolicy.resolve(
-            expected: .writing,
-            visible: .writing,
-            ready: nil,
+        OverlayDismissalReadinessPolicy.resolve(
+            expectedGeneration: 7,
+            currentGeneration: 7,
+            readyGeneration: nil,
             isPanelVisible: true,
             hasTimedOut: false
         ),
         equals: .waiting,
-        "writing presentation still animating"
+        "Thinking dismissal still animating"
     )
     try expect(
-        OverlayPresentationReadinessPolicy.resolve(
-            expected: .writing,
-            visible: .writing,
-            ready: .writing,
-            isPanelVisible: true,
-            hasTimedOut: false
-        ),
-        equals: .ready,
-        "writing presentation ready"
-    )
-}
-
-private func testOverlayReadinessFailsClosed() throws {
-    try expect(
-        OverlayPresentationReadinessPolicy.resolve(
-            expected: .writing,
-            visible: .thinking,
-            ready: .thinking,
-            isPanelVisible: true,
-            hasTimedOut: false
-        ),
-        equals: .unavailable,
-        "different presentation"
-    )
-    try expect(
-        OverlayPresentationReadinessPolicy.resolve(
-            expected: .writing,
-            visible: .writing,
-            ready: nil,
+        OverlayDismissalReadinessPolicy.resolve(
+            expectedGeneration: 7,
+            currentGeneration: 7,
+            readyGeneration: 7,
             isPanelVisible: false,
             hasTimedOut: false
         ),
+        equals: .ready,
+        "Thinking presentation dismissed"
+    )
+}
+
+private func testOverlayDismissalFailsClosed() throws {
+    try expect(
+        OverlayDismissalReadinessPolicy.resolve(
+            expectedGeneration: 7,
+            currentGeneration: 8,
+            readyGeneration: nil,
+            isPanelVisible: true,
+            hasTimedOut: false
+        ),
         equals: .unavailable,
-        "hidden panel"
+        "different presentation generation"
     )
     try expect(
-        OverlayPresentationReadinessPolicy.resolve(
-            expected: .writing,
-            visible: .writing,
-            ready: nil,
+        OverlayDismissalReadinessPolicy.resolve(
+            expectedGeneration: 7,
+            currentGeneration: 7,
+            readyGeneration: nil,
             isPanelVisible: true,
             hasTimedOut: true
         ),
         equals: .unavailable,
-        "presentation timeout"
+        "dismissal timeout"
+    )
+}
+
+private func testClipboardRecoveryNamesMacPasteShortcut() throws {
+    try expect(
+        ClipboardRecoveryCopy.pasteShortcut,
+        equals: "⌘V",
+        "macOS paste shortcut"
+    )
+    try expect(
+        ClipboardRecoveryCopy.message(
+            reason: "未识别到输入框"
+        ),
+        equals: "未识别到输入框，已复制，请按 ⌘V 粘贴",
+        "clipboard recovery message"
+    )
+    try expect(
+        ClipboardRecoveryCopy.uncertainDeliveryMessage,
+        equals: "已复制；若未写入，请按 ⌘V 粘贴",
+        "uncertain delivery avoids duplicate paste"
     )
 }
 
@@ -1520,20 +1529,24 @@ private enum SottoCoreTestHarness {
                 testOverlayCopyUsesThinkingForProcessing
             ),
             (
-                "Overlay copy uses Writing for insertion",
-                testOverlayCopyUsesWritingForInsertion
+                "Insertion has no overlay presentation",
+                testInsertionHasNoOverlayPresentation
             ),
             (
-                "Processing, polishing, and insertion have ordered presentations",
-                testProcessingPolishingAndInsertionHaveOrderedPresentations
+                "Processing and polishing use Thinking before dismissal",
+                testProcessingAndPolishingUseThinkingBeforeDismissal
             ),
             (
-                "Overlay readiness waits for Writing presentation",
-                testOverlayReadinessWaitsForWritingPresentation
+                "Overlay dismissal waits until panel is hidden",
+                testOverlayDismissalWaitsUntilPanelIsHidden
             ),
             (
-                "Overlay readiness fails closed",
-                testOverlayReadinessFailsClosed
+                "Overlay dismissal fails closed",
+                testOverlayDismissalFailsClosed
+            ),
+            (
+                "Clipboard recovery names macOS paste shortcut",
+                testClipboardRecoveryNamesMacPasteShortcut
             ),
             (
                 "Bailian workspace input extracts ID from console API host",

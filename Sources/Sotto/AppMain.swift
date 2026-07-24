@@ -104,7 +104,7 @@ struct SottoApp: App {
     private var menuBarSymbol: String {
         switch appDelegate.model.phase {
         case .listening: "waveform.circle.fill"
-        case .processing, .polishing, .inserting: "ellipsis.circle.fill"
+        case .processing, .polishing: "ellipsis.circle.fill"
         case .error: "exclamationmark.triangle.fill"
         default: "waveform"
         }
