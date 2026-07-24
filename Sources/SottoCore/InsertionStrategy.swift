@@ -42,7 +42,7 @@ public enum InsertionStrategyResolver {
         guard !target.isSecure else {
             return .copyOnly(reason: .secureField)
         }
-        if source == .codexProseMirror {
+        if source == .codexProseMirror || source == .webContent {
             return .pasteboard
         }
         if target.isNativeTextControl,

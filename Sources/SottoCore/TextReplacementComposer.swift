@@ -3,6 +3,22 @@ import Foundation
 public enum TextReplacementSource: Equatable, Sendable {
     case standard
     case codexProseMirror
+    case webContent
+}
+
+public enum TextControlOriginPolicy {
+    public static func replacementSource(
+        hasWebAreaAncestor: Bool,
+        hasDOMIdentifier: Bool,
+        domClasses: [String]
+    ) -> TextReplacementSource {
+        if hasWebAreaAncestor
+            || hasDOMIdentifier
+            || domClasses.contains("ProseMirror") {
+            return .webContent
+        }
+        return .standard
+    }
 }
 
 public enum TextReplacementComposer {

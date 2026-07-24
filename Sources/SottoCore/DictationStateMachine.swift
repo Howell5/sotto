@@ -23,7 +23,6 @@ public enum DictationEvent: Equatable, Sendable {
 }
 
 public enum DictationEffect: Equatable, Sendable {
-    case captureFocus
     case startRecording
     case stopRecordingAndTranscribe
     case cancelRecording
@@ -45,7 +44,7 @@ public struct DictationStateMachine: Sendable {
         switch (phase, event) {
         case (.idle, .fnPressed):
             phase = .listening
-            return [.captureFocus, .startRecording]
+            return [.startRecording]
         case (.listening, .fnPressed), (.listening, .finishRequested):
             phase = .processing
             return [.stopRecordingAndTranscribe]

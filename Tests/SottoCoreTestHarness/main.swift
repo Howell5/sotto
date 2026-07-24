@@ -26,7 +26,7 @@ private func testFnPressFromIdleBeginsListeningAndRequestsRecording() throws {
     try expect(machine.phase, equals: .listening, "phase after Fn press")
     try expect(
         effects,
-        equals: [.captureFocus, .startRecording],
+        equals: [.startRecording],
         "effects after Fn press"
     )
 }
@@ -778,6 +778,49 @@ private func testInsertionStrategyUsesPasteForCodexProseMirror() throws {
     )
 }
 
+private func testWebTextOriginRecognizesWebAreaAncestry() throws {
+    try expect(
+        TextControlOriginPolicy.replacementSource(
+            hasWebAreaAncestor: true,
+            hasDOMIdentifier: false,
+            domClasses: []
+        ),
+        equals: .webContent,
+        "web-area text origin"
+    )
+}
+
+private func testNativeTextOriginIgnoresChromiumViewClass() throws {
+    try expect(
+        TextControlOriginPolicy.replacementSource(
+            hasWebAreaAncestor: false,
+            hasDOMIdentifier: false,
+            domClasses: ["OmniboxViewViews"]
+        ),
+        equals: .standard,
+        "native Chromium view origin"
+    )
+}
+
+private func testInsertionStrategyUsesPasteForWebTextControl() throws {
+    let target = InsertionTargetCapabilities(
+        isSameFocusedElement: true,
+        isSecure: false,
+        isNativeTextControl: true,
+        valueIsWritable: true,
+        hasSelectedTextRange: true
+    )
+
+    try expect(
+        InsertionStrategyResolver.resolve(
+            target,
+            source: .webContent
+        ),
+        equals: .pasteboard,
+        "DOM-backed text strategy"
+    )
+}
+
 private func testInsertionStrategyCopiesWhenFocusChanged() throws {
     let target = InsertionTargetCapabilities(
         isSameFocusedElement: false,
@@ -847,6 +890,14 @@ private func testWindowFocusFallbackUsesFrontmostNormalWindow() throws {
             height: 48
         ),
         WindowFocusCandidate(
+            processID: 77,
+            layer: 0,
+            alpha: 1,
+            width: 126,
+            height: 126,
+            isRegularApplication: false
+        ),
+        WindowFocusCandidate(
             processID: 101,
             layer: 0,
             alpha: 1,
@@ -876,24 +927,303 @@ private func testWindowFocusFallbackUsesFrontmostNormalWindow() throws {
             excluding: 101
         ),
         equals: nil,
-        "do not fall through behind Sotto's own normal window"
+        "do not guess an application behind Sotto"
     )
 }
 
-private func testCodexTargetDoesNotFollowAnotherProseMirror() throws {
+private func testFocusedTextResolutionRetryPolicyIsBounded() throws {
+    let delays = (1...4).map {
+        FocusedTextResolutionRetryPolicy.delayMilliseconds(
+            afterFailedAttemptCount: $0
+        )
+    }
+
     try expect(
-        TextTargetIdentityPolicy.isSameTarget(
-            sameElement: true
+        delays,
+        equals: [20, 40, 80, nil],
+        "bounded focus retry delays"
+    )
+}
+
+private func testFocusedTextResolutionDefersWindowTraversal() throws {
+    let traversalAttempts = (1...4).map {
+        FocusedTextResolutionRetryPolicy.shouldIncludeWindowTraversal(
+            onAttempt: $0
+        )
+    }
+
+    try expect(
+        traversalAttempts,
+        equals: [false, false, false, true],
+        "window traversal retry placement"
+    )
+}
+
+private func testFocusedTextNormalizationUsesEditableAncestor() throws {
+    let path = [
+        FocusedTextCandidateSnapshot(
+            role: "AXGroup",
+            valueIsWritable: false,
+            hasTextSelection: false
         ),
-        equals: true,
-        "same Codex AX element"
+        FocusedTextCandidateSnapshot(
+            role: "AXTextArea",
+            valueIsWritable: true,
+            hasTextSelection: true
+        )
+    ]
+
+    try expect(
+        FocusedTextNormalizationPolicy.normalizedEditableIndex(in: path),
+        equals: 1,
+        "editable ancestor index"
+    )
+}
+
+private func testFocusedTextNormalizationRejectsNonEditableContainer() throws {
+    let path = [
+        FocusedTextCandidateSnapshot(
+            role: "AXGroup",
+            valueIsWritable: false,
+            hasTextSelection: false
+        ),
+        FocusedTextCandidateSnapshot(
+            role: "AXTextArea",
+            valueIsWritable: false,
+            hasTextSelection: false
+        )
+    ]
+
+    try expect(
+        FocusedTextNormalizationPolicy.normalizedEditableIndex(in: path),
+        equals: nil,
+        "non-editable focus path"
+    )
+}
+
+private func testFocusedTextNormalizationAcceptsOnlyDOMBackedEditableGroup() throws {
+    try expect(
+        FocusedTextNormalizationPolicy.normalizedEditableIndex(
+            in: [
+                FocusedTextCandidateSnapshot(
+                    role: "AXGroup",
+                    valueIsWritable: true,
+                    hasTextSelection: true,
+                    isDOMBacked: true
+                )
+            ]
+        ),
+        equals: 0,
+        "DOM-backed editable group"
     )
     try expect(
-        TextTargetIdentityPolicy.isSameTarget(
-            sameElement: false
+        FocusedTextNormalizationPolicy.normalizedEditableIndex(
+            in: [
+                FocusedTextCandidateSnapshot(
+                    role: "AXGroup",
+                    valueIsWritable: true,
+                    hasTextSelection: true,
+                    isDOMBacked: false
+                )
+            ]
+        ),
+        equals: nil,
+        "plain AXGroup"
+    )
+    try expect(
+        FocusedTextNormalizationPolicy.normalizedEditableIndex(
+            in: [
+                FocusedTextCandidateSnapshot(
+                    role: "AXGroup",
+                    valueIsWritable: false,
+                    hasTextSelection: true,
+                    isDOMBacked: true,
+                    isExplicitEditableAncestor: false
+                )
+            ]
+        ),
+        equals: nil,
+        "DOM group with document selection only"
+    )
+    try expect(
+        FocusedTextNormalizationPolicy.normalizedEditableIndex(
+            in: [
+                FocusedTextCandidateSnapshot(
+                    role: "AXGroup",
+                    valueIsWritable: false,
+                    hasTextSelection: true,
+                    isDOMBacked: true,
+                    isExplicitEditableAncestor: true
+                )
+            ]
+        ),
+        equals: 0,
+        "explicit DOM editable ancestor"
+    )
+}
+
+private func testFocusResolutionSkipsInvalidSystemWideCandidate() throws {
+    try expect(
+        FocusResolutionSourcePolicy.choose(
+            systemWideCandidateIsEditable: false,
+            applicationCandidateIsEditable: true,
+            windowDescendantIsEditable: true
+        ),
+        equals: .application,
+        "application focus after invalid system-wide focus"
+    )
+}
+
+private func testFrontmostProcessCandidatesIncludeAccessoryOwner() throws {
+    try expect(
+        FrontmostProcessCandidatePolicy.processIDs(
+            frontmostProcessID: 61_875,
+            isOwnProcess: false,
+            isRegularApplication: false,
+            regularAncestorProcessID: 61_425,
+            globallyFocusedProcessIDs: [61_425]
+        ),
+        equals: [61_875, 61_425],
+        "globally focused accessory owner candidate"
+    )
+    try expect(
+        FrontmostProcessCandidatePolicy.processIDs(
+            frontmostProcessID: 61_875,
+            isOwnProcess: false,
+            isRegularApplication: false,
+            regularAncestorProcessID: 61_425,
+            globallyFocusedProcessIDs: [61_875]
+        ),
+        equals: [61_875],
+        "stale accessory owner focus is rejected"
+    )
+    try expect(
+        FrontmostProcessCandidatePolicy.processIDs(
+            frontmostProcessID: 202,
+            isOwnProcess: false,
+            isRegularApplication: true,
+            regularAncestorProcessID: 101,
+            globallyFocusedProcessIDs: [101]
+        ),
+        equals: [202],
+        "regular application ignores ancestor candidates"
+    )
+    try expect(
+        FrontmostProcessCandidatePolicy.processIDs(
+            frontmostProcessID: 303,
+            isOwnProcess: false,
+            isRegularApplication: false,
+            regularAncestorProcessID: nil,
+            globallyFocusedProcessIDs: [303]
+        ),
+        equals: [303],
+        "standalone accessory application remains eligible"
+    )
+    try expect(
+        FrontmostProcessCandidatePolicy.processIDs(
+            frontmostProcessID: 101,
+            isOwnProcess: true,
+            isRegularApplication: true,
+            regularAncestorProcessID: nil,
+            globallyFocusedProcessIDs: [101]
+        ),
+        equals: [],
+        "Sotto has no external focus candidates"
+    )
+}
+
+private func testFocusedContainerIsNormalizedBeforeRoleFiltering() throws {
+    try expect(
+        FocusedDescendantTraversalPolicy.shouldNormalize(
+            role: "AXGroup",
+            isFocused: true
+        ),
+        equals: true,
+        "focused container normalization"
+    )
+    try expect(
+        FocusedDescendantTraversalPolicy.shouldNormalize(
+            role: "AXTextArea",
+            isFocused: false
         ),
         equals: false,
-        "another ProseMirror in the same window"
+        "unfocused text candidate normalization"
+    )
+}
+
+private func testEditableAncestorOrderingPrefersHighestAncestor() throws {
+    try expect(
+        FocusedEditableCandidateOrderingPolicy.preferredSources(
+            hasHighestEditableAncestor: true,
+            hasEditableAncestor: true
+        ),
+        equals: [
+            .highestEditableAncestor,
+            .editableAncestor,
+            .focusedElement
+        ],
+        "editable candidate source order"
+    )
+}
+
+private func testResolvedTargetAcceptsFocusedDescendantAtCommit() throws {
+    try expect(
+        CurrentTargetFocusPolicy.isStillFocused(
+            sameElementAsFocusedElement: false,
+            containsFocusedElement: true,
+            targetReportsFocused: false
+        ),
+        equals: true,
+        "resolved editable ancestor at commit"
+    )
+}
+
+private func testCommitFocusValidationTreatsSystemFocusAsAuthoritative() throws {
+    try expect(
+        CurrentFocusValidationSourcePolicy.choose(
+            systemWideFocusedProcessID: 101,
+            targetProcessID: 101,
+            applicationFocusIsAvailable: true
+        ),
+        equals: .systemWide,
+        "matching system-wide focus"
+    )
+    try expect(
+        CurrentFocusValidationSourcePolicy.choose(
+            systemWideFocusedProcessID: 202,
+            targetProcessID: 101,
+            applicationFocusIsAvailable: true
+        ),
+        equals: .reject,
+        "different system-wide focus rejects stale application focus"
+    )
+    try expect(
+        CurrentFocusValidationSourcePolicy.choose(
+            systemWideFocusedProcessID: nil,
+            targetProcessID: 101,
+            applicationFocusIsAvailable: true
+        ),
+        equals: .application,
+        "missing system-wide focus permits application fallback"
+    )
+}
+
+private func testFocusProcessFreshnessRejectsStaleApplication() throws {
+    try expect(
+        FocusProcessFreshnessPolicy.isCurrent(
+            resolvedProcessID: 101,
+            eligibleFrontmostProcessIDs: [202]
+        ),
+        equals: false,
+        "stale resolved process"
+    )
+    try expect(
+        FocusProcessFreshnessPolicy.isCurrent(
+            resolvedProcessID: 61_425,
+            eligibleFrontmostProcessIDs: [61_875, 61_425]
+        ),
+        equals: true,
+        "accessory helper owner process"
     )
 }
 
@@ -1509,6 +1839,18 @@ private enum SottoCoreTestHarness {
                 testInsertionStrategyUsesPasteForCodexProseMirror
             ),
             (
+                "Web text origin recognizes WebArea ancestry",
+                testWebTextOriginRecognizesWebAreaAncestry
+            ),
+            (
+                "Native text origin ignores Chromium view class",
+                testNativeTextOriginIgnoresChromiumViewClass
+            ),
+            (
+                "Insertion strategy uses paste for web text control",
+                testInsertionStrategyUsesPasteForWebTextControl
+            ),
+            (
                 "Insertion strategy copies when focus changed",
                 testInsertionStrategyCopiesWhenFocusChanged
             ),
@@ -1521,8 +1863,52 @@ private enum SottoCoreTestHarness {
                 testWindowFocusFallbackUsesFrontmostNormalWindow
             ),
             (
-                "Codex target does not follow another ProseMirror",
-                testCodexTargetDoesNotFollowAnotherProseMirror
+                "Focused text resolution retry policy is bounded",
+                testFocusedTextResolutionRetryPolicyIsBounded
+            ),
+            (
+                "Focused text resolution defers window traversal",
+                testFocusedTextResolutionDefersWindowTraversal
+            ),
+            (
+                "Focused text normalization uses editable ancestor",
+                testFocusedTextNormalizationUsesEditableAncestor
+            ),
+            (
+                "Focused text normalization rejects non-editable container",
+                testFocusedTextNormalizationRejectsNonEditableContainer
+            ),
+            (
+                "Focused text normalization accepts only DOM-backed editable group",
+                testFocusedTextNormalizationAcceptsOnlyDOMBackedEditableGroup
+            ),
+            (
+                "Focus resolution skips invalid system-wide candidate",
+                testFocusResolutionSkipsInvalidSystemWideCandidate
+            ),
+            (
+                "Frontmost process candidates include accessory owner",
+                testFrontmostProcessCandidatesIncludeAccessoryOwner
+            ),
+            (
+                "Focused container is normalized before role filtering",
+                testFocusedContainerIsNormalizedBeforeRoleFiltering
+            ),
+            (
+                "Editable ancestor ordering prefers highest ancestor",
+                testEditableAncestorOrderingPrefersHighestAncestor
+            ),
+            (
+                "Resolved target accepts focused descendant at commit",
+                testResolvedTargetAcceptsFocusedDescendantAtCommit
+            ),
+            (
+                "Commit focus validation treats system focus as authoritative",
+                testCommitFocusValidationTreatsSystemFocusAsAuthoritative
+            ),
+            (
+                "Focus process freshness rejects stale application",
+                testFocusProcessFreshnessRejectsStaleApplication
             ),
             (
                 "Overlay copy uses Thinking for processing",
