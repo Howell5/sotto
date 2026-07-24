@@ -755,12 +755,13 @@ final class AppModel: ObservableObject {
 
     private func insertText(_ finalText: String) async {
         if let overlayController {
-            let isWritingPresented = await overlayController.waitUntilPresented(
-                .writing
-            )
+            let isOverlayDismissed =
+                await overlayController.waitUntilDismissedForInsertion()
             guard phase == .inserting else { return }
-            guard isWritingPresented else {
-                let message = "无法确认写入状态，结果已复制"
+            guard isOverlayDismissed else {
+                let message = ClipboardRecoveryCopy.message(
+                    reason: "无法关闭听写状态"
+                )
                 lastResult = finalText
                 focusedTarget = nil
                 statusDetail = message

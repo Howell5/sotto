@@ -19,8 +19,9 @@ final class OverlayPanelController: AnyObject {
     private let hostingView: FirstMouseHostingView<OverlayView>
     private let model: AppModel
     private var visiblePresentation: DictationOverlayPresentation?
-    private var readyPresentation: DictationOverlayPresentation?
     private var presentationGeneration = 0
+    private var insertionDismissalGeneration: Int?
+    private var readyInsertionDismissalGeneration: Int?
 
     init(model: AppModel) {
         self.model = model
@@ -52,10 +53,17 @@ final class OverlayPanelController: AnyObject {
     }
 
     func render(phase: DictationPhase) {
+        if phase == .inserting {
+            dismissForInsertion()
+            return
+        }
+
         guard let presentation = DictationOverlayPresentation.resolve(phase) else {
             presentationGeneration += 1
             visiblePresentation = nil
-            readyPresentation = nil
+            insertionDismissalGeneration = nil
+            readyInsertionDismissalGeneration = nil
+            panel.alphaValue = 0
             panel.orderOut(nil)
             return
         }
@@ -77,8 +85,8 @@ final class OverlayPanelController: AnyObject {
         }
 
         presentationGeneration += 1
-        let generation = presentationGeneration
-        readyPresentation = nil
+        insertionDismissalGeneration = nil
+        readyInsertionDismissalGeneration = nil
         visiblePresentation = presentation
         let size = panelSize(for: presentation)
         panel.setContentSize(size)
@@ -89,31 +97,21 @@ final class OverlayPanelController: AnyObject {
                 ? 0.12
                 : 0.18
             panel.animator().alphaValue = 1
-        } completionHandler: { [weak self] in
-            Task { @MainActor [weak self] in
-                guard let self,
-                      self.presentationGeneration == generation
-                else { return }
-                self.readyPresentation =
-                    self.visiblePresentation == presentation
-                        && self.panel.isVisible
-                        ? presentation
-                        : nil
-            }
         }
     }
 
-    func waitUntilPresented(
-        _ presentation: DictationOverlayPresentation
-    ) async -> Bool {
+    func waitUntilDismissedForInsertion() async -> Bool {
+        guard let expectedGeneration = insertionDismissalGeneration else {
+            return false
+        }
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .milliseconds(750))
 
         while !Task.isCancelled {
-            switch OverlayPresentationReadinessPolicy.resolve(
-                expected: presentation,
-                visible: visiblePresentation,
-                ready: readyPresentation,
+            switch OverlayDismissalReadinessPolicy.resolve(
+                expectedGeneration: expectedGeneration,
+                currentGeneration: presentationGeneration,
+                readyGeneration: readyInsertionDismissalGeneration,
                 isPanelVisible: panel.isVisible,
                 hasTimedOut: clock.now >= deadline
             ) {
@@ -132,15 +130,47 @@ final class OverlayPanelController: AnyObject {
         return false
     }
 
+    private func dismissForInsertion() {
+        presentationGeneration += 1
+        let generation = presentationGeneration
+        visiblePresentation = nil
+        insertionDismissalGeneration = generation
+        readyInsertionDismissalGeneration = nil
+        panel.ignoresMouseEvents = true
+
+        guard panel.isVisible else {
+            panel.alphaValue = 0
+            panel.orderOut(nil)
+            readyInsertionDismissalGeneration = generation
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                ? 0
+                : 0.12
+            panel.animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.presentationGeneration == generation,
+                      self.insertionDismissalGeneration == generation,
+                      self.visiblePresentation == nil
+                else { return }
+                self.panel.orderOut(nil)
+                self.readyInsertionDismissalGeneration = generation
+            }
+        }
+    }
+
     private func panelSize(
         for presentation: DictationOverlayPresentation
     ) -> NSSize {
         switch presentation {
         case .listening: NSSize(width: 280, height: 52)
         case .thinking: NSSize(width: 164, height: 44)
-        case .writing: NSSize(width: 154, height: 44)
         case .cancelled: NSSize(width: 124, height: 40)
-        case .error: NSSize(width: 300, height: 48)
+        case .error: NSSize(width: 380, height: 56)
         }
     }
 
@@ -227,11 +257,7 @@ private struct OverlayView: View {
             Text(DictationOverlayCopy.thinking)
                 .font(.system(size: 13, weight: .semibold))
         case .inserting:
-            ProgressView()
-                .controlSize(.small)
-                .tint(Color(hex: 0x9EC39A))
-            Text(DictationOverlayCopy.writing)
-                .font(.system(size: 13, weight: .semibold))
+            EmptyView()
         case .success:
             EmptyView()
         case .cancelled:
@@ -243,7 +269,7 @@ private struct OverlayView: View {
                 .foregroundStyle(Color(hex: 0xE39288))
             Text(message)
                 .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
+                .lineLimit(2)
         }
     }
 }
