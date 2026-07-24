@@ -65,7 +65,6 @@ final class AppModel: ObservableObject {
     private let textInsertion = TextInsertionService()
     private let transcriptGuard = TranscriptGuard()
 
-    private var focusedTarget: FocusedTextTarget?
     private var activeSession: (any ASRSession)?
     private var activeSessionID: UUID?
     private var pcmContinuation: AsyncStream<Data>.Continuation?
@@ -476,12 +475,6 @@ final class AppModel: ObservableObject {
     private func execute(_ effects: [DictationEffect]) {
         for effect in effects {
             switch effect {
-            case .captureFocus:
-                focusedTarget = textInsertion.captureFocusedTarget()
-                statusDetail = focusedTarget == nil
-                    ? "No writable target; result will be copied"
-                    : "Target captured"
-
             case .startRecording:
                 statusDetail = "Listening"
                 prepareCaptureAndConnect()
@@ -492,7 +485,6 @@ final class AppModel: ObservableObject {
 
             case .cancelRecording:
                 cancelActiveSession()
-                focusedTarget = nil
                 statusDetail = "Cancelled"
 
             case let .polishTranscript(text):
@@ -715,7 +707,6 @@ final class AppModel: ObservableObject {
 
     private func discardNoSpeech() {
         cancelActiveSession()
-        focusedTarget = nil
         lastServiceError = nil
         statusDetail = "Ready"
         apply(.noSpeechDetected)
@@ -763,7 +754,6 @@ final class AppModel: ObservableObject {
                     reason: "无法关闭听写状态"
                 )
                 lastResult = finalText
-                focusedTarget = nil
                 statusDetail = message
                 apply(
                     .operationFailed(
@@ -777,9 +767,7 @@ final class AppModel: ObservableObject {
         guard phase == .inserting else { return }
 
         lastResult = finalText
-        let target = focusedTarget
-        focusedTarget = nil
-        let outcome = await textInsertion.insert(finalText, into: target)
+        let outcome = await textInsertion.insert(finalText)
 
         switch outcome {
         case .inserted:
@@ -800,7 +788,6 @@ final class AppModel: ObservableObject {
         if case .error = phase { return }
 
         cancelActiveSession()
-        focusedTarget = nil
         audioLevel = 0
         statusDetail = message
         apply(.operationFailed(message: message, recoveryText: recoveryText))
